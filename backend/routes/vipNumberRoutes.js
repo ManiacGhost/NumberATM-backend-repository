@@ -38,6 +38,11 @@ router.get("/dropdown", (req, res, next) => { req.url = req.url; next(); },
   (req, res, next) => next(),
   (req, res) => require('../controllers/vipNumberController').getDropdownVIPNumbers(req, res)
 );
+// Pattern-based popular numbers (sequences/repeats/palindromes)
+router.get("/patterns", (req, res, next) => { req.url = req.url; next(); },
+  (req, res, next) => next(),
+  (req, res) => require('../controllers/vipNumberController').getPatternVIPNumbers(req, res)
+);
 router.get("/admin",verifyToken, getVIPNumbersbyAdmin);
 router.get("/search", searchVIPNumbers);
 router.post("/search/shop", getSearchedVIPNumbers);

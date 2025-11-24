@@ -983,3 +983,105 @@ const allNumbersSetSum2 = async () => {
     console.log("ended")
 };
 // allNumbers();
+ 
+// Helper: detect if a number has a recognisable pattern/sequence
+const isPatternNumber = (numStr) => {
+    if (!numStr || typeof numStr !== 'string') return false;
+    // ensure it's digits
+    if (!/^\d+$/.test(numStr)) return false;
+
+    // all same digits e.g., 9999999999
+    const allSame = numStr.split('').every(d => d === numStr[0]);
+    if (allSame) return true;
+
+    // palindrome
+    const rev = numStr.split('').reverse().join('');
+    if (rev === numStr) return true;
+
+    // ascending sequence (allow wrap from 9->0) for at least length 5
+    const isAscending = (() => {
+        let count = 1;
+        for (let i = 1; i < numStr.length; i++) {
+            const prev = parseInt(numStr[i-1], 10);
+            const cur = parseInt(numStr[i], 10);
+            if ((prev + 1) % 10 === cur) count++; else count = 1;
+            if (count >= 5) return true;
+        }
+        return false;
+    })();
+    if (isAscending) return true;
+
+    // descending sequence (allow wrap 0->9) for at least length 5
+    const isDescending = (() => {
+        let count = 1;
+        for (let i = 1; i < numStr.length; i++) {
+            const prev = parseInt(numStr[i-1], 10);
+            const cur = parseInt(numStr[i], 10);
+            if ((prev + 9) % 10 === cur) count++; else count = 1;
+            if (count >= 5) return true;
+        }
+        return false;
+    })();
+    if (isDescending) return true;
+
+    // repeated pair ABABABAB
+    const isRepeatPair = (() => {
+        if (numStr.length % 2 !== 0) return false;
+        const pair = numStr.slice(0,2);
+        const repeated = pair.repeat(numStr.length/2);
+        return repeated === numStr && pair[0] !== pair[1];
+    })();
+    if (isRepeatPair) return true;
+
+    // repeated triplet
+    const isRepeatTriplet = (() => {
+        if (numStr.length % 3 !== 0) return false;
+        const trip = numStr.slice(0,3);
+        const repeated = trip.repeat(numStr.length/3);
+        return repeated === numStr;
+    })();
+    if (isRepeatTriplet) return true;
+
+    // check for long runs of same digit (4 or more)
+    const longRun = /([0-9])\1{3,}/.test(numStr);
+    if (longRun) return true;
+
+    // check for sequences of length >=5 anywhere (strict increasing or decreasing without wrap)
+    const strictSeq = (() => {
+        for (let start = 0; start <= numStr.length - 5; start++) {
+            let asc = true, desc = true;
+            for (let i = start + 1; i < start + 5; i++) {
+                const prev = parseInt(numStr[i-1],10);
+                const cur = parseInt(numStr[i],10);
+                if (cur !== prev + 1) asc = false;
+                if (cur !== prev - 1) desc = false;
+            }
+            if (asc || desc) return true;
+        }
+        return false;
+    })();
+    if (strictSeq) return true;
+
+    return false;
+};
+
+// Get VIP numbers that have recognizable patterns/sequences
+exports.getPatternVIPNumbers = async (req, res) => {
+    try {
+        // Fetch candidates (only in-stock numbers)
+        const candidates = await VIPNumber.find({ stock: { $ne: 0 } }).select('number price owner highLightedNumber');
+
+        const patterned = candidates.filter(v => isPatternNumber(v.number));
+
+        // Limit result size to a reasonable number
+        const limit = Math.min(Number(req.query.limit) || 50, 500);
+
+        // Optionally populate owner information
+        const idsToPopulate = patterned.slice(0, limit).map(p => p._id);
+        const results = await VIPNumber.find({ _id: { $in: idsToPopulate } }).limit(limit).populate('owner');
+
+        res.status(200).json({ data: results });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
