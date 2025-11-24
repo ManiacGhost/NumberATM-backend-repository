@@ -1099,21 +1099,50 @@ exports.getNumbersByCategory = async (req, res) => {
         const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const categoryRegex = new RegExp('^' + escapeRegex(categoryParam) + '$', 'i');
 
-        // If an exact number is provided, return exact-match result only
+        // If a number param is provided, decide exact vs partial search
         if (numberParam) {
-            // exact match on `number` field and category membership
-            const doc = await VIPNumber.findOne({
-                number: numberParam,
-                stock: { $ne: 0 },
-                category: { $in: [categoryRegex] }
-            }).populate({ path: 'owner' });
+            // If full 10-digit number provided -> exact match
+            if (/^[6789]\d{9}$/.test(numberParam)) {
+                const doc = await VIPNumber.findOne({
+                    number: numberParam,
+                    stock: { $ne: 0 },
+                    category: { $in: [categoryRegex] }
+                }).populate({ path: 'owner' });
 
-            // ensure owner exists and is showCased
-            if (!doc || !doc.owner || !doc.owner.showCased) {
-                return res.status(200).json({ data: [], total: 0, page: 1, limit: 1 });
+                if (!doc || !doc.owner || !doc.owner.showCased) {
+                    return res.status(200).json({ data: [], total: 0, page: 1, limit: 1 });
+                }
+
+                return res.status(200).json({ data: [doc], total: 1, page: 1, limit: 1 });
             }
 
-            return res.status(200).json({ data: [doc], total: 1, page: 1, limit: 1 });
+            // Partial search: treat numberParam as substring, return paginated results
+            const page = Math.max(parseInt(req.query.page || 1, 10), 1);
+            const limit = Math.max(parseInt(req.query.limit || 20, 10), 1);
+            const skip = (page - 1) * limit;
+
+            const numberRegex = new RegExp(numberParam.replace(/[^0-9]/g, ''), 'i');
+
+            // Use aggregation with facet to get data + total after owner filtering
+            const pipeline = [
+                { $match: { stock: { $ne: 0 }, category: { $in: [categoryRegex] }, number: { $regex: numberRegex } } },
+                { $lookup: { from: 'owners', localField: 'owner', foreignField: '_id', as: 'owner' } },
+                { $unwind: '$owner' },
+                { $match: { 'owner.showCased': true } },
+                { $sort: { createdAt: -1 } },
+                {
+                    $facet: {
+                        data: [ { $skip: skip }, { $limit: limit } ],
+                        totalCount: [ { $count: 'count' } ]
+                    }
+                }
+            ];
+
+            const agg = await VIPNumber.aggregate(pipeline);
+            const data = agg[0].data || [];
+            const total = agg[0].totalCount[0]?.count || 0;
+
+            return res.status(200).json({ data, total, page, limit });
         }
 
         // fallback: paginated category listing (same behavior as before)
