@@ -1340,6 +1340,7 @@ exports.getNumbersByCategory = async (req, res) => {
         const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const categoryRegex = new RegExp('^' + escapeRegex(categoryParam) + '$', 'i');
 
+<<<<<<< HEAD
         // If a number param is provided, decide exact vs partial search
         if (numberParam) {
             // If full 10-digit number provided -> exact match
@@ -1384,6 +1385,23 @@ exports.getNumbersByCategory = async (req, res) => {
             const total = agg[0].totalCount[0]?.count || 0;
 
             return res.status(200).json({ data, total, page, limit });
+=======
+        // If an exact number is provided, return exact-match result only
+        if (numberParam) {
+            // exact match on `number` field and category membership
+            const doc = await VIPNumber.findOne({
+                number: numberParam,
+                stock: { $ne: 0 },
+                category: { $in: [categoryRegex] }
+            }).populate({ path: 'owner' });
+
+            // ensure owner exists and is showCased
+            if (!doc || !doc.owner || !doc.owner.showCased) {
+                return res.status(200).json({ data: [], total: 0, page: 1, limit: 1 });
+            }
+
+            return res.status(200).json({ data: [doc], total: 1, page: 1, limit: 1 });
+>>>>>>> b332c4c (added category based searching)
         }
 
         // fallback: paginated category listing (same behavior as before)
@@ -1423,5 +1441,8 @@ exports.getNumbersByCategory = async (req, res) => {
         console.error('Error in getNumbersByCategory:', err);
         res.status(500).json({ message: 'Server error', error: err.message });
     }
+<<<<<<< HEAD
 
+=======
+>>>>>>> b332c4c (added category based searching)
 };
