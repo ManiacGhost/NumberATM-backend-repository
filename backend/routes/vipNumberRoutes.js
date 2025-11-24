@@ -47,6 +47,9 @@ router.get("/admin",verifyToken, getVIPNumbersbyAdmin);
 router.get("/search", searchVIPNumbers);
 router.post("/search/shop", getSearchedVIPNumbers);
 router.get("/popular", getPopularVIPNumbers);
+// Category-based search: query param `category` or path param
+router.get("/category", (req, res, next) => require('../controllers/vipNumberController').getNumbersByCategory(req, res, next));
+router.get("/category/:category", (req, res, next) => require('../controllers/vipNumberController').getNumbersByCategory(req, res, next));
 router.get("/featured", getAllFeaturedVIPNumbers);
 router.get("/sold", getSoldNumbers);
 router.get("/:id", getVIPNumber);

@@ -1085,3 +1085,72 @@ exports.getPatternVIPNumbers = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+// Get numbers by a single category (case-insensitive exact match).
+// If `number` or `search` query is provided, return only the exact number (still must belong to the category).
+exports.getNumbersByCategory = async (req, res) => {
+    try {
+        const categoryParam = (req.params.category || req.query.category || '').toString().trim();
+        if (!categoryParam) return res.status(400).json({ message: 'category parameter is required' });
+
+        const numberParam = (req.query.number || req.query.search || '').toString().trim();
+
+        // escape regex special chars for category exact (case-insensitive)
+        const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const categoryRegex = new RegExp('^' + escapeRegex(categoryParam) + '$', 'i');
+
+        // If an exact number is provided, return exact-match result only
+        if (numberParam) {
+            // exact match on `number` field and category membership
+            const doc = await VIPNumber.findOne({
+                number: numberParam,
+                stock: { $ne: 0 },
+                category: { $in: [categoryRegex] }
+            }).populate({ path: 'owner' });
+
+            // ensure owner exists and is showCased
+            if (!doc || !doc.owner || !doc.owner.showCased) {
+                return res.status(200).json({ data: [], total: 0, page: 1, limit: 1 });
+            }
+
+            return res.status(200).json({ data: [doc], total: 1, page: 1, limit: 1 });
+        }
+
+        // fallback: paginated category listing (same behavior as before)
+        const page = Math.max(parseInt(req.query.page || 1, 10), 1);
+        const limit = Math.max(parseInt(req.query.limit || 20, 10), 1);
+        const skip = (page - 1) * limit;
+
+        const match = {
+            stock: { $ne: 0 },
+            category: { $in: [categoryRegex] }
+        };
+
+        const pipeline = [
+            { $match: match },
+            {
+                $lookup: {
+                    from: 'owners',
+                    localField: 'owner',
+                    foreignField: '_id',
+                    as: 'owner'
+                }
+            },
+            { $unwind: '$owner' },
+            { $match: { 'owner.showCased': true } },
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit }
+        ];
+
+        const [data, total] = await Promise.all([
+            VIPNumber.aggregate(pipeline),
+            VIPNumber.countDocuments(match)
+        ]);
+
+        res.status(200).json({ data, total, page, limit });
+    } catch (err) {
+        console.error('Error in getNumbersByCategory:', err);
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+};
