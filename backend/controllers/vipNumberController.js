@@ -1193,4 +1193,235 @@ const calculateSums = (number) => {
     .reduce((acc, digit) => acc + parseInt(digit, 10), 0);
 
   return { total: sumOfDigits, sum2: sumOfResultingDigits, sum: finalSum };
+
+};
+// const allNumbers = async () => {
+//     console.log("started")
+//     const numbers = await VIPNumber.find({ number: '9936679936' }); // Make sure to await this
+//     for (const number of numbers) {
+//         const highlightedNumber = highlightMobileNumber(number.number);
+//         const spacedNumber = addSpaceAfter5DigitsInHtml(highlightedNumber);
+//         await VIPNumber.findByIdAndUpdate(
+//             number._id,
+//             { $set: { highLightedNumber: spacedNumber } },
+//             { new: true }
+//         );
+//     }
+//     console.log("ended")
+// };
+const allNumbersSetSum2 = async () => {
+    console.log("started")
+    const numbers = await VIPNumber.find(); // Make sure to await this
+    for (const number of numbers) {
+        if (!number?.sum2) {
+            await VIPNumber.findByIdAndUpdate(
+                number._id,
+                { $set: { sum2: calculateSums(number.number).sum2 } },
+                { new: true }
+            );
+        }
+    }
+    console.log("ended")
+};
+// allNumbers();
+ 
+// Helper: detect if a number has a recognisable pattern/sequence
+const isPatternNumber = (numStr) => {
+    if (!numStr || typeof numStr !== 'string') return false;
+    // ensure it's digits
+    if (!/^\d+$/.test(numStr)) return false;
+
+    // all same digits e.g., 9999999999
+    const allSame = numStr.split('').every(d => d === numStr[0]);
+    if (allSame) return true;
+
+    // palindrome
+    const rev = numStr.split('').reverse().join('');
+    if (rev === numStr) return true;
+
+    // ascending sequence (allow wrap from 9->0) for at least length 5
+    const isAscending = (() => {
+        let count = 1;
+        for (let i = 1; i < numStr.length; i++) {
+            const prev = parseInt(numStr[i-1], 10);
+            const cur = parseInt(numStr[i], 10);
+            if ((prev + 1) % 10 === cur) count++; else count = 1;
+            if (count >= 5) return true;
+        }
+        return false;
+    })();
+    if (isAscending) return true;
+
+    // descending sequence (allow wrap 0->9) for at least length 5
+    const isDescending = (() => {
+        let count = 1;
+        for (let i = 1; i < numStr.length; i++) {
+            const prev = parseInt(numStr[i-1], 10);
+            const cur = parseInt(numStr[i], 10);
+            if ((prev + 9) % 10 === cur) count++; else count = 1;
+            if (count >= 5) return true;
+        }
+        return false;
+    })();
+    if (isDescending) return true;
+
+    // repeated pair ABABABAB
+    const isRepeatPair = (() => {
+        if (numStr.length % 2 !== 0) return false;
+        const pair = numStr.slice(0,2);
+        const repeated = pair.repeat(numStr.length/2);
+        return repeated === numStr && pair[0] !== pair[1];
+    })();
+    if (isRepeatPair) return true;
+
+    // repeated triplet
+    const isRepeatTriplet = (() => {
+        if (numStr.length % 3 !== 0) return false;
+        const trip = numStr.slice(0,3);
+        const repeated = trip.repeat(numStr.length/3);
+        return repeated === numStr;
+    })();
+    if (isRepeatTriplet) return true;
+
+    // check for long runs of same digit (4 or more)
+    const longRun = /([0-9])\1{3,}/.test(numStr);
+    if (longRun) return true;
+
+    // check for sequences of length >=5 anywhere (strict increasing or decreasing without wrap)
+    const strictSeq = (() => {
+        for (let start = 0; start <= numStr.length - 5; start++) {
+            let asc = true, desc = true;
+            for (let i = start + 1; i < start + 5; i++) {
+                const prev = parseInt(numStr[i-1],10);
+                const cur = parseInt(numStr[i],10);
+                if (cur !== prev + 1) asc = false;
+                if (cur !== prev - 1) desc = false;
+            }
+            if (asc || desc) return true;
+        }
+        return false;
+    })();
+    if (strictSeq) return true;
+
+    return false;
+};
+
+// Get VIP numbers that have recognizable patterns/sequences
+exports.getPatternVIPNumbers = async (req, res) => {
+    try {
+        // Fetch candidates (only in-stock numbers)
+        const candidates = await VIPNumber.find({ stock: { $ne: 0 } }).select('number price owner highLightedNumber');
+
+        const patterned = candidates.filter(v => isPatternNumber(v.number));
+
+        // Limit result size to a reasonable number
+        const limit = Math.min(Number(req.query.limit) || 50, 500);
+
+        // Optionally populate owner information
+        const idsToPopulate = patterned.slice(0, limit).map(p => p._id);
+        const results = await VIPNumber.find({ _id: { $in: idsToPopulate } }).limit(limit).populate('owner');
+
+        res.status(200).json({ data: results });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// Get numbers by a single category (case-insensitive exact match).
+// If `number` or `search` query is provided, return only the exact number (still must belong to the category).
+exports.getNumbersByCategory = async (req, res) => {
+    try {
+        const categoryParam = (req.params.category || req.query.category || '').toString().trim();
+        if (!categoryParam) return res.status(400).json({ message: 'category parameter is required' });
+
+        const numberParam = (req.query.number || req.query.search || '').toString().trim();
+
+        // escape regex special chars for category exact (case-insensitive)
+        const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const categoryRegex = new RegExp('^' + escapeRegex(categoryParam) + '$', 'i');
+
+        // If a number param is provided, decide exact vs partial search
+        if (numberParam) {
+            // If full 10-digit number provided -> exact match
+            if (/^[6789]\d{9}$/.test(numberParam)) {
+                const doc = await VIPNumber.findOne({
+                    number: numberParam,
+                    stock: { $ne: 0 },
+                    category: { $in: [categoryRegex] }
+                }).populate({ path: 'owner' });
+
+                if (!doc || !doc.owner || !doc.owner.showCased) {
+                    return res.status(200).json({ data: [], total: 0, page: 1, limit: 1 });
+                }
+
+                return res.status(200).json({ data: [doc], total: 1, page: 1, limit: 1 });
+            }
+
+            // Partial search: treat numberParam as substring, return paginated results
+            const page = Math.max(parseInt(req.query.page || 1, 10), 1);
+            const limit = Math.max(parseInt(req.query.limit || 20, 10), 1);
+            const skip = (page - 1) * limit;
+
+            const numberRegex = new RegExp(numberParam.replace(/[^0-9]/g, ''), 'i');
+
+            // Use aggregation with facet to get data + total after owner filtering
+            const pipeline = [
+                { $match: { stock: { $ne: 0 }, category: { $in: [categoryRegex] }, number: { $regex: numberRegex } } },
+                { $lookup: { from: 'owners', localField: 'owner', foreignField: '_id', as: 'owner' } },
+                { $unwind: '$owner' },
+                { $match: { 'owner.showCased': true } },
+                { $sort: { createdAt: -1 } },
+                {
+                    $facet: {
+                        data: [ { $skip: skip }, { $limit: limit } ],
+                        totalCount: [ { $count: 'count' } ]
+                    }
+                }
+            ];
+
+            const agg = await VIPNumber.aggregate(pipeline);
+            const data = agg[0].data || [];
+            const total = agg[0].totalCount[0]?.count || 0;
+
+            return res.status(200).json({ data, total, page, limit });
+        }
+
+        // fallback: paginated category listing (same behavior as before)
+        const page = Math.max(parseInt(req.query.page || 1, 10), 1);
+        const limit = Math.max(parseInt(req.query.limit || 20, 10), 1);
+        const skip = (page - 1) * limit;
+
+        const match = {
+            stock: { $ne: 0 },
+            category: { $in: [categoryRegex] }
+        };
+
+        const pipeline = [
+            { $match: match },
+            {
+                $lookup: {
+                    from: 'owners',
+                    localField: 'owner',
+                    foreignField: '_id',
+                    as: 'owner'
+                }
+            },
+            { $unwind: '$owner' },
+            { $match: { 'owner.showCased': true } },
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit }
+        ];
+
+        const [data, total] = await Promise.all([
+            VIPNumber.aggregate(pipeline),
+            VIPNumber.countDocuments(match)
+        ]);
+
+        res.status(200).json({ data, total, page, limit });
+    } catch (err) {
+        console.error('Error in getNumbersByCategory:', err);
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+
 };
