@@ -1,0 +1,14 @@
+const express = require("express");
+const { getAllVendors, addVendor, updateVendor, updateVendorWithDiscount, addVendors, deleteVendor, stopShowCase, renewShowCase, updateVendorWithDiscountAndMargin } = require("../controllers/vendorControllers");
+const { verifyToken } = require("../middlewares/verifyToken");
+const router = express.Router();
+router.get("/", getAllVendors);
+router.post("/",verifyToken, addVendor);
+router.post("/excel",verifyToken, addVendors);
+router.put("/:id/margins" ,verifyToken, updateVendor);
+router.put("/:id/stop" ,verifyToken, stopShowCase);
+router.put("/:id/renew" ,verifyToken, renewShowCase);
+router.put("/:id/all" ,verifyToken, updateVendorWithDiscountAndMargin);
+router.put("/:id/discount" ,verifyToken, updateVendorWithDiscount);
+router.delete("/:id" ,verifyToken, deleteVendor);
+module.exports = router;

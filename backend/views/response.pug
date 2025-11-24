@@ -1,0 +1,63 @@
+
+extends layout
+
+block content
+  .rside
+    .formwrap.container-fluid
+        if(txndata.TRANSACTIONSTATUS == '200' && txnhash == txndata.ap_SecureHash)
+            table
+                tr  
+                    td(class='tdsuccess')
+                      b SUCCESS TRANSACTION
+            table
+                tr  
+                    td TRANSACTIONID
+                    td :
+                    td #{txndata.TRANSACTIONID}
+                tr  
+                    td APTRANSACTIONID
+                    td :
+                    td #{txndata.APTRANSACTIONID}
+                tr  
+                    td AMOUNT
+                    td :
+                    td #{txndata.AMOUNT}
+                tr  
+                    td MESSAGE
+                    td :
+                    td #{txndata.MESSAGE}
+                tr  
+                    td CUSTOMVAR
+                    td :
+                    td #{txndata.CUSTOMVAR}
+        else 
+            table
+                tr  
+                    td(class='tdfail')
+                      b FAILED TRANSACTION
+            table
+                tr  
+                    td TRANSACTIONID
+                    td :
+                    td #{txndata.TRANSACTIONID}
+                tr  
+                    td APTRANSACTIONID
+                    td :
+                    td #{txndata.APTRANSACTIONID}
+                tr  
+                    td AMOUNT
+                    td :
+                    td #{txndata.AMOUNT}
+                tr  
+                    td MESSAGE
+                    td :
+                    td #{txndata.MESSAGE}
+                tr  
+                    td CUSTOMVAR
+                    td :
+                    td #{txndata.CUSTOMVAR}
+
+                    
+                    
+           
+        

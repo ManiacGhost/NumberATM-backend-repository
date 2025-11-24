@@ -1,0 +1,94 @@
+extends layout
+
+block content
+  .rside
+    .formwrap.container-fluid
+      // register form
+      form(method='POST' action='/sendtoairpay' class='form-horizontal' name='make_trans')
+        .row
+          .col-xs-12.col-sm-12.col-md-6.col-lg-4
+            div.form-group
+              label(for='buyerEmail') Buyer Email
+                font.red *<br/>
+              input#buyerEmail.form-control(type='text',  name='buyerEmail' value=fdata && fdata.buyerEmail ? fdata.buyerEmail:'')
+              font.red #{errors && errors.buyerEmail ? errors.buyerEmail:''}
+          .col-xs-12.col-sm-12.col-md-6.col-lg-4
+            div.form-group
+              label(for='buyerPhone') Buyer Phone
+                font.red *<br/>
+              input#buyerPhone.form-control(type='text',  name='buyerPhone' value=fdata && fdata.buyerPhone ? fdata.buyerPhone:'')
+              font.red #{errors && errors.buyerPhone ? errors.buyerPhone:''}
+          .col-md-6.col-lg-4
+            div.form-group
+              label(for='buyerFirstName') Buyer FirstName
+                font.red *<br/>
+              input#buyerFirstName.form-control(type='text',  name='buyerFirstName' value=fdata && fdata.buyerFirstName ? fdata.buyerFirstName:'')
+              font.red #{errors && errors.buyerFirstName ? errors.buyerFirstName:''}
+          .col-md-6.col-lg-4  
+            div.form-group
+              label(for='buyerLastName') Buyer LastName
+                font.red *<br/>
+              input#buyerLastName.form-control(type='text',  name='buyerLastName' value=fdata && fdata.buyerLastName ? fdata.buyerLastName:'')
+              font.red #{errors && errors.buyerLastName ? errors.buyerLastName:''}
+          .col-md-6.col-lg-4  
+            div.form-group
+              label(for='buyerAddress') Buyer Address:<br/>
+              input#buyerAddress.form-control(type='text',  name='buyerAddress' value=fdata && fdata.buyerAddress ? fdata.buyerAddress:'')
+          .col-md-6.col-lg-4  
+            div.form-group
+              label(for='buyerCity') Buyer City:<br/>
+              input#buyerCity.form-control(type='text',  name='buyerCity'  value=fdata && fdata.buyerCity ? fdata.buyerCity:'')
+          .col-md-6.col-lg-4  
+            div.form-group
+              label(for='buyerState') Buyer State:<br/>
+              input#buyerState.form-control(type='text',  name='buyerState'  value=fdata && fdata.buyerState ? fdata.buyerState:'')
+          .col-md-6.col-lg-4  
+            div.form-group
+              label(for='buyerCountry') Buyer Country:<br/>
+              input#buyerCountry.form-control(type='text',  name='buyerCountry' value=fdata && fdata.buyerCountry ? fdata.buyerCountry:'')
+          .col-md-6.col-lg-4  
+            div.form-group
+              label(for='buyerPinCode') Buyer PinCode:<br/>
+              input#buyerPinCode.form-control(type='text',  name='buyerPinCode' value=fdata && fdata.buyerPinCode ? fdata.buyerPinCode:'')
+              font.red #{errors && errors.buyerPinCode ? errors.buyerPinCode:''}
+        <hr/>
+        .row
+          .col-md-6.col-lg-4
+            div.form-group
+              label(for='orderid') Order ID
+                font.red *<br/>
+              input#orderid.form-control(type='text',  name='orderid' value=fdata && fdata.orderid ? fdata.orderid:'')
+              font.red #{errors && errors.orderid ? errors.orderid:''}
+          .col-md-6.col-lg-4
+            div.form-group
+              label(for='amount') Amount
+                font.red *<br/>
+              input#amount.form-control(type='text',  name='amount' value=fdata && fdata.amount ? fdata.amount:'')
+              font.red #{errors && errors.amount ? errors.amount:''}
+          .col-md-6.col-lg-4
+            div.form-group
+              label(for='customvar') Custom Field 1:<br/>
+              input#customvar.form-control(type='text',  name='customvar' value=fdata && fdata.customvar ? fdata.customvar:'')
+          .col-md-6.col-lg-4
+            div.form-group
+              label(for='currency') Currency
+                font.red *<br/>
+              input#currency.form-control(type='text',  name='currency' value=fdata && fdata.currency ? fdata.currency:'356')
+              font.red #{errors && errors.currency ? errors.currency:''}
+          .col-md-6.col-lg-4
+            div.form-group
+              label(for='isocurrency') ISO Currency
+                font.red *<br/>
+              input#isocurrency.form-control(type='text',  name='isocurrency' value=fdata && fdata.isocurrency ? fdata.isocurrency:'')
+              font.red #{errors && errors.isocurrency ? errors.isocurrency:''}
+        <hr/>
+        .row
+          .col-md-6.col-lg-4
+            div.form-group
+              label(for='txnsubtype') Sub Type:<br/>
+              input#subtype.form-control(type='text',  name='txnsubtype' value=fdata && fdata.txnsubtype ? fdata.txnsubtype:'')
+        div.btngroup
+          button.btn.btn-primary(type='submit') Pay Here
+
+
+   
