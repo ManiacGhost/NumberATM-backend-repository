@@ -9,16 +9,10 @@ const VIPNumber = require('../models/vipNumber');
 const Promo = require('../models/Promo');
 const {sendOrderEmail, sendOrderEmailCustomer} = require('./emailSender');
 dotenv.config();
-// Validate Razorpay environment keys before creating the client
-const { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } = process.env;
-if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
-    throw new Error('Missing RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET in environment. Add them to .env or your host env.');
-}
-
 // Create an Invoice and handle payment
 const razorpay = new Razorpay({
-    key_id: RAZORPAY_KEY_ID,
-    key_secret: RAZORPAY_KEY_SECRET,
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 // Controller to create a new order
 exports.createOrder = async (req, res) => {

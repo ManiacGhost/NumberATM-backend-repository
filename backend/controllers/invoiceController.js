@@ -56,10 +56,10 @@ exports.generateInvoice = async (req, res) => {
         // Pricing Details
         doc.fontSize(14).font("Helvetica-Bold").text("Payment Summary", { underline: true });
         doc.moveDown();
-        doc.fontSize(12).font("Helvetica-Bold").text(`Subtotal: Rs. ${order.price}`);
-        { order.discount && doc.font("Helvetica-Bold").text(`Discount: ₹${order.discount}`); }
-        doc.font("Helvetica-Bold").text(`Total Price: Rs. ${order.totalPrice}`, { bold: true });
-        doc.font("Helvetica-Bold").text(`GST: Rs. ${order.gst}`);
+        doc.fontSize(12).font("Helvetica-Bold").text(`Subtotal: Rs. ${parseFloat(order.price).toFixed(2)}`);
+        { order.discount && doc.font("Helvetica-Bold").text(`Discount: ₹${parseFloat(order.discount).toFixed(2)}`); }
+        doc.font("Helvetica-Bold").text(`Total Price: Rs. ${parseFloat(order.totalPrice).toFixed(2)}`, { bold: true });
+        doc.font("Helvetica-Bold").text(`GST: Rs. ${parseFloat(order.gst).toFixed(2)}`);
         doc.moveDown();
 
         // Footer

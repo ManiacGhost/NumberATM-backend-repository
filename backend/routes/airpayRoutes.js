@@ -13,15 +13,16 @@ const Cart = require('../models/Cart');
 const { authMiddleware } = require('../middlewares/authMiddleware');
 const { sendOrderEmail, sendOrderEmailCustomer } = require('../controllers/emailSender');
 const dayjs = require('dayjs');
+const Margin = require('../models/Margin');
 /*var mid = '19010';
 var username = '1021705';
 var password = '74b1K5k2';
 var secret = 'P43WoR9jcQkB7UOh';*/
 // Merchant Id 335854 Username CKFzeZGut2 Password WRx4M373 API key V8GqK8T6RC4ajHM8
 var mid = '335854';
-var username = process.env.AIRPAY_USERNAME||'CKFzeZGut2';
-var password = process.env.AIRPAY_PASSWORD||'WRx4M373';
-var secret = process.env.AIRPAY_SECRET_KEY||'V8GqK8T6RC4ajHM8';
+var username = process.env.AIRPAY_USERNAME || 'CKFzeZGut2';
+var password = process.env.AIRPAY_PASSWORD || 'WRx4M373';
+var secret = process.env.AIRPAY_SECRET_KEY || 'V8GqK8T6RC4ajHM8';
 
 var now = new Date();
 
@@ -130,79 +131,118 @@ router.post(
     runValidation,
     async function (req, res, next) {
         try {
-            const { amount, price, gst, promoCode, isApplied, discount, formData } = req.body;
-            const cart = await Cart.findOne({ userId: req.user.id });
-            const cartIds = cart.items?.map(item => item.vipNumberId); // Extract VIPNumber IDs
-            // const vipNumbers = await VIPNumber.find({ _id: { $in: cartIds } });
-            // console.log(cartIds)
-            // Check VIP numbers stock
-            const vipNumbers = await VIPNumber.find({ _id: { $in: cartIds } });
-            // const existing = await Order.findOne({ 'items.vipNumber': { $in: cartIds } })
-            // console.log("existing",existing)
-            // if (existing) {
-            //     return res.status(409).json({ message: 'One or more VIP Numbers already ordered, remove them and try again', existing });
-            // }
-            const outOfStockNumbers = vipNumbers.filter((number) => number.stock === 0);
-            if (outOfStockNumbers.length > 0) {
+            const { amount, promoCode, isApplied, discount = 0, formData } = req.body;
+
+            if (!req.user?.id) {
+                return res.status(400).json({ message: "User not authenticated" });
+            }
+
+            // Step 1: Fetch cart
+            const cart = await Cart.findOne({ userId: req.user.id }).populate({
+                path: "items.vipNumberId",
+                populate: { path: "owner" }
+            });
+            if (!cart || cart.items.length === 0) {
+                return res.status(400).json({ message: "Cart is empty" });
+            }
+
+            // Step 2: Fetch margins
+            const allMargins = await Margin.find();
+
+            // Step 3: Calculate total price (same as addToCart)
+            let totalPrice = 0;
+            const validItems = cart.items.filter(i => i.vipNumberId);
+
+            for (const item of validItems) {
+                const vip = item.vipNumberId;
+                const basePrice = vip.price || 0;
+                const vipDiscount = vip.discount || 0;
+                const priceAfterDiscount = Math.max(basePrice - vipDiscount, 0);
+
+                // Find applicable margin
+                const marginData = allMargins.find(
+                    (m) => basePrice >= m.minPrice && basePrice <= m.maxPrice
+                );
+                const marginPercent = marginData ? marginData.marginPercent : 0;
+
+                const finalPrice = priceAfterDiscount + (basePrice * marginPercent / 100);
+                const roundedFinalPrice = Math.round(finalPrice / 10) * 10;
+
+                totalPrice += roundedFinalPrice;
+            }
+
+            // Step 4: Add 18% GST
+            const gst = totalPrice * 0.18;
+
+            // Step 5: Apply promo/discount if any
+            let promo = null;
+            let promoDiscount = 0;
+            if (isApplied && promoCode) {
+                promo = await Promo.findOne({ code: promoCode });
+                if (promo && promo.isActive) {
+                    promoDiscount = promo.type === "percent"
+                        ? (totalPrice * promo.value / 100)
+                        : promo.value;
+                }
+            }
+
+            const payableAmount = totalPrice + gst - promoDiscount;
+
+            // Step 6: Validate frontend amount
+            if (Number(amount) !== Number(payableAmount)) {
                 return res.status(400).json({
-                    message: "Some numbers are sold just now. Get another one, sorry for the inconvenience!",
-                    outOfStockNumbers: outOfStockNumbers.map((num) => num.number),
+                    message: `Amount mismatch. Expected ₹${payableAmount}, received ₹${amount}. Please refresh and try again.`,
+                    serverCalculated: payableAmount
                 });
             }
 
-            // Check cart
-            // const cart = await Cart.findOne({ userId: req.user.id });
-            if (!cart || cart.items.length === 0) {
-                return res.status(400).json({ success: false, message: "Cart is empty" });
+            // if (payableAmount < 1000) {
+            //     return res.status(400).json({ message: "Minimum order amount is ₹1000" });
+            // }
+// console.log(payableAmount);
+            // Step 7: Verify stock
+            const vipNumbers = validItems.map(i => i.vipNumberId);
+            const outOfStock = vipNumbers.filter(v => v.stock === 0);
+            if (outOfStock.length > 0) {
+                return res.status(400).json({
+                    message: "Some numbers are sold just now, please remove them.",
+                    outOfStock: outOfStock.map(v => v.number)
+                });
             }
 
-            // Order counter
+            // Step 8: Create order ID
             let orderCounter = await OrderCounter.findOne();
-            if (!orderCounter) {
-                orderCounter = new OrderCounter();
-            }
+            if (!orderCounter) orderCounter = new OrderCounter();
             orderCounter.count += 1;
             await orderCounter.save();
+            const orderid = `NA-${(Date.now() % 1000000)}${Math.floor(100 + Math.random() * 900)}`;
 
-            // Generate unique Order ID
-            const orderid = `NA-${(Date.now() % 1000000).toString()}${Math.floor(100 + Math.random() * 900)}`;
-
-            // Transform cart items into order format
-            const orderItems = cart.items.map((item) => ({
-                vipNumber: item.vipNumberId,
-            }));
-            const numbers = vipNumbers.map(item => item.number);
-            const numberPricePairs = vipNumbers.map(item => ({
-                number: item.number,
-                price: item.price,
-            }));
-            let promo = null;
-            if (isApplied) {
-                promo = await Promo.findOne({ code: promoCode });
-            }
+            // Step 9: Create order
             const newOrder = new Order({
                 rzpOrderId: orderid,
                 orderId: orderid,
                 ...formData,
                 promoCode: promo ? promo._id : null,
-                // rzpPaymentId: paymentId,
-                price: Number(price),
-                discount: Number(discount),
-                totalPrice: Number(amount),
-                // cgst: Number(cgst),
-                gst: Number(gst),
-                numbers,
-                numberPricePairs,
+                price: totalPrice,
+                discount: promoDiscount,
+                totalPrice: payableAmount,
+                gst,
+                numbers: vipNumbers.map(v => v.number),
+                numberPricePairs: vipNumbers.map(v => ({
+                    number: v.number,
+                    price: v.price
+                })),
                 customer: req.user.id,
-                items: orderItems, // Correct format for Order schema
+                items: cart.items.map(i => ({ vipNumber: i.vipNumberId })),
                 paymentStatus: "Pending",
             });
+
             await newOrder.save();
 
             var md5 = require('md5');
             var sha256 = require('sha256');
             var dateformat = require('dateformat');
-            console.log(req.body)
+            console.log({...req.body, payableAmount, orderid});
             alldata = req.body.buyerEmail + req.body.buyerFirstName + req.body.buyerLastName + req.body.buyerAddress + req.body.buyerCity + req.body.buyerState + req.body.buyerCountry + req.body.amount + req.body.orderid;
             udata = username + ':|:' + password;
             privatekey = sha256(secret + '@' + udata);
@@ -249,11 +289,11 @@ router.post("/responsefromairpay", async function (req, res) {
     if (isSuccess) {
         order.paymentStatus = "Paid";
         order.transactionTime = new Date();
-         order.paymentMessage= MESSAGE,
-        await VIPNumber.updateMany(
-            { _id: { $in: vipNumbers } },
-            { $set: { stock: 0, saleTime: new Date() } } // Corrected field name & Date object
-        );
+        order.paymentMessage = MESSAGE,
+            await VIPNumber.updateMany(
+                { _id: { $in: vipNumbers } },
+                { $set: { stock: 0, saleTime: new Date() } } // Corrected field name & Date object
+            );
         await order.save();
         await Cart.findOneAndDelete({ userId: order.customer });
         await sendOrderEmail(order?.orderId);
@@ -261,22 +301,22 @@ router.post("/responsefromairpay", async function (req, res) {
     } else if (isCancelled) {
         order.paymentStatus = "Cancelled";
         order.transactionTime = new Date();
-         order.paymentMessage= MESSAGE,
-        await order.save();
+        order.paymentMessage = MESSAGE,
+            await order.save();
         await Cart.findOneAndDelete({ userId: order.customer });
         await sendOrderEmail(order?.orderId, "Cancelled");
     } else if (isUnderProcess) {
         order.paymentStatus = "In Process";
         order.transactionTime = new Date();
-          order.paymentMessage= MESSAGE,
-        await order.save();
+        order.paymentMessage = MESSAGE,
+            await order.save();
         await Cart.findOneAndDelete({ userId: order.customer });
         await sendOrderEmail(order?.orderId, "In Process");
     } else {
         order.paymentStatus = "Failed";
         order.transactionTime = new Date();
-          order.paymentMessage= MESSAGE,
-        await order.save();
+        order.paymentMessage = MESSAGE,
+            await order.save();
         await sendOrderEmail(order?.orderId, "Failed");
     }
 
@@ -289,96 +329,96 @@ router.post("/responsefromairpay", async function (req, res) {
     res.redirect(frontendURL);
 });
 router.post('/ipn-callback', async (req, res) => {
-  try {
-    const data = req.body;
+    try {
+        const data = req.body;
 
-    const {
-      TRANSACTIONID,
-      APTRANSACTIONID,
-      AMOUNT,
-      TRANSACTIONSTATUS,
-      MESSAGE,
-      MERCID,
-      ap_SecureHash,
-      TRANSACTIONTIME,
-      CUSTOMERVPA, // optional, used in UPI hash
-    } = data;
-console.log('IPN Data:', data);
-    // Your merchant credentials (replace with actual values)
-    const MID = process.env.AIRPAY_MERCHANT_ID;
-    const USERNAME = process.env.AIRPAY_USERNAME;
+        const {
+            TRANSACTIONID,
+            APTRANSACTIONID,
+            AMOUNT,
+            TRANSACTIONSTATUS,
+            MESSAGE,
+            MERCID,
+            ap_SecureHash,
+            TRANSACTIONTIME,
+            CUSTOMERVPA, // optional, used in UPI hash
+        } = data;
+        console.log('IPN Data:', data);
+        // Your merchant credentials (replace with actual values)
+        const MID = process.env.AIRPAY_MERCHANT_ID;
+        const USERNAME = process.env.AIRPAY_USERNAME;
 
-    // Create the string to hash
-    // let hashString = `${TRANSACTIONID}:${APTRANSACTIONID}:${AMOUNT}:${TRANSACTIONSTATUS}:${MESSAGE}:${MERCID}:${USERNAME}`;
-    // if (CUSTOMERVPA) {
-    //   hashString += `:${CUSTOMERVPA}`;
-    // }
+        // Create the string to hash
+        // let hashString = `${TRANSACTIONID}:${APTRANSACTIONID}:${AMOUNT}:${TRANSACTIONSTATUS}:${MESSAGE}:${MERCID}:${USERNAME}`;
+        // if (CUSTOMERVPA) {
+        //   hashString += `:${CUSTOMERVPA}`;
+        // }
 
-    // // Compute the hash
-    // const expectedHash = require('crc').crc32(hashString).toString();
+        // // Compute the hash
+        // const expectedHash = require('crc').crc32(hashString).toString();
 
-    // // Verify the hash
-    // if (expectedHash !== ap_SecureHash) {
-    //   return res.status(400).send('Invalid hash');
-    // }
+        // // Verify the hash
+        // if (expectedHash !== ap_SecureHash) {
+        //   return res.status(400).send('Invalid hash');
+        // }
 
-    // Now update order status as in your real-time response
-    const orderId = TRANSACTIONID; // this is your original order ID
-    let status = 'pending';
+        // Now update order status as in your real-time response
+        const orderId = TRANSACTIONID; // this is your original order ID
+        let status = 'pending';
 
-    switch (Number(TRANSACTIONSTATUS)) {
-      case 200:
-        status = 'success';
-        break;
-      case 211:
-        status = 'processing';
-        break;
-      case 400:
-        status = 'failed';
-        break;
-      case 401:
-        status = 'dropped';
-        break;
-      case 402:
-      case 502:
-        status = 'cancelled';
-        break;
-      case 403:
-        status = 'incomplete';
-        break;
-      case 405:
-        status = 'bounced';
-        break;
-      case 503:
-        status = 'no_record';
-        break;
-      default:
-        status = 'unknown';
+        switch (Number(TRANSACTIONSTATUS)) {
+            case 200:
+                status = 'success';
+                break;
+            case 211:
+                status = 'processing';
+                break;
+            case 400:
+                status = 'failed';
+                break;
+            case 401:
+                status = 'dropped';
+                break;
+            case 402:
+            case 502:
+                status = 'cancelled';
+                break;
+            case 403:
+                status = 'incomplete';
+                break;
+            case 405:
+                status = 'bounced';
+                break;
+            case 503:
+                status = 'no_record';
+                break;
+            default:
+                status = 'unknown';
+        }
+        // const parsedTime = dayjs(TRANSACTIONTIME, 'DD-MM-YYYY HH:mm:ss').toDate();
+        // Update order in DB
+        const updatedOrder = await Order.findOneAndUpdate(
+            { orderId: orderId }, // your DB field that stores order id
+            {
+                $set: {
+                    status: status,
+                    paymentId: APTRANSACTIONID,
+                    paymentMessage: MESSAGE,
+                    transactionTime: new Date(),
+                },
+            },
+            { new: true }
+        );
+
+        if (!updatedOrder) {
+            return res.status(404).send('Order not found');
+        }
+        console.log('IPN processed successfully')
+        res.status(200).send('IPN processed successfully');
+    } catch (error) {
+        console.error('IPN error:', error);
+        res.status(500).send('Server error');
     }
-    // const parsedTime = dayjs(TRANSACTIONTIME, 'DD-MM-YYYY HH:mm:ss').toDate();
-    // Update order in DB
-    const updatedOrder = await Order.findOneAndUpdate(
-      { orderId: orderId }, // your DB field that stores order id
-      {
-        $set: {
-          status: status,
-          paymentId: APTRANSACTIONID,
-          paymentMessage: MESSAGE,
-          transactionTime: new Date(),
-        },
-      },
-      { new: true }
-    );
-
-    if (!updatedOrder) {
-      return res.status(404).send('Order not found');
-    }
-    console.log('IPN processed successfully')
-    res.status(200).send('IPN processed successfully');
-  } catch (error) {
-    console.error('IPN error:', error);
-    res.status(500).send('Server error');
-  }
 });
 
 const setNumbersToOrders = async () => {

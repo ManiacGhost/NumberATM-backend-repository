@@ -24,7 +24,6 @@ const marginRoutes = require("./routes/marginRoutes");
 const cityRoutes = require("./routes/cityRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const metaRoutes = require("./routes/metaRoutes");
-const reviewRoutes = require("./routes/reviewRoutes");
 const sitemap = require("./routes/sitemap");
 const airpayRoutes = require("./routes/airpayRoutes");
 const invoiceRoutes = require("./routes/InvoiceRoutes");
@@ -36,18 +35,36 @@ const Meta = require("./models/Meta");
 const Blog = require("./models/Blog");
 const City = require("./models/City");
 const asyncHandler = require('./utils/asyncHandler')
+
+const familyPackNumbersRoutes = require("./routes/familyPackNumbersRoutes");
+const relatedNumbersRoute = require("./routes/relatedNumbersRoute");
+const exactPlacementNumber = require("./routes/exactPlacementNumberRoute")
+
+
+
 const app = express();
 app.set('view engine', 'pug');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use(cookieParser());
+const allowedOrigins = [
+  "https://numberatm.com",
+  "https://www.numberatm.com",
+  "http://localhost:5173" // optional for local dev
+];
+
 app.use(cors({
   origin: '*',  // Allow all origins
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],  // Allow these HTTP methods
-  allowedHeaders: '*',  // Allow these headers
+  allowedHeaders: '*', 
 }));
 // Routes
+
+app.use("/api/vip-numbers", familyPackNumbersRoutes);
+app.use("/api/vip-numbers", relatedNumbersRoute);
+app.use("/api/vip-numbers", exactPlacementNumber);
+
 
 app.use("/api/vip-numbers", vipNumberRoutes);
 app.use("/api/auth", authRoutes);
@@ -68,7 +85,6 @@ app.use("/api/margins", marginRoutes);
 app.use("/api/city", cityRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/meta", metaRoutes);
-app.use("/api/reviews", reviewRoutes);
 app.use("/api/invoice", invoiceRoutes);
 app.use("/sitemap.xml", sitemap);
 app.use("/sitemap", sitemap);
